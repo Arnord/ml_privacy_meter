@@ -74,17 +74,17 @@ networkx==3.2.1
 notebook==7.2.2
 notebook_shim==0.2.4
 numpy==1.26.3
-nvidia-cublas-cu11==11.11.3.6
-nvidia-cuda-cupti-cu11==11.8.87
-nvidia-cuda-nvrtc-cu11==11.8.89
-nvidia-cuda-runtime-cu11==11.8.89
-nvidia-cudnn-cu11==9.1.0.70
-nvidia-cufft-cu11==10.9.0.58
-nvidia-curand-cu11==10.3.0.86
-nvidia-cusolver-cu11==11.4.1.48
-nvidia-cusparse-cu11==11.7.5.86
-nvidia-nccl-cu11==2.20.5
-nvidia-nvtx-cu11==11.8.86
+# nvidia-cublas-cu11==11.11.3.6
+# nvidia-cuda-cupti-cu11==11.8.87
+# nvidia-cuda-nvrtc-cu11==11.8.89
+# nvidia-cuda-runtime-cu11==11.8.89
+# nvidia-cudnn-cu11==9.1.0.70
+# nvidia-cufft-cu11==10.9.0.58
+# nvidia-curand-cu11==10.3.0.86
+# nvidia-cusolver-cu11==11.4.1.48
+# nvidia-cusparse-cu11==11.7.5.86
+# nvidia-nccl-cu11==2.20.5
+# nvidia-nvtx-cu11==11.8.86
 overrides==7.7.0
 opacus==1.5.2
 packaging==24.1
@@ -130,6 +130,9 @@ terminado==0.18.1
 threadpoolctl==3.5.0
 tinycss2==1.4.0
 tokenizers==0.19.1
+torch==2.4.1
+torchaudio==2.4.1
+torchvision==0.19.1
 tornado==6.4.1
 tqdm==4.66.6
 traitlets==5.14.3
@@ -149,5 +152,5 @@ xxhash==3.5.0
 yarl==1.17.1
 --extra-index-url https://download.pytorch.org/whl/cu118
 torch==2.4.1
-torchvision 
+torchvision
 torchaudio

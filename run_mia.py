@@ -82,6 +82,7 @@ def main():
     models_list, memberships = load_models(
         log_dir, dataset, num_model_pairs * 2, configs, logger
     )
+    # models_list = None   # for test remember to del
     if models_list is None:
         # Split dataset for training two models per pair
         data_splits, memberships = split_dataset_for_training(
