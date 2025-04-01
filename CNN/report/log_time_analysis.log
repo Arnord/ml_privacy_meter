@@ -1,0 +1,73 @@
+2025-03-31 19:07:48,474 INFO     Load data from data/cifar10.pkl
+2025-03-31 19:07:48,474 INFO     The whole dataset size: 60000
+2025-03-31 19:07:48,474 INFO     Loading dataset took 0.03294 seconds
+2025-03-31 19:07:48,478 INFO     Training 10 models
+2025-03-31 19:07:48,478 INFO     --------------------------------------------------
+2025-03-31 19:07:48,478 INFO     Training model 0: Train size 30000, Test size 30000
+2025-03-31 19:09:09,965 INFO     Train accuracy 0.5869333333333333, Train Loss 1.1688210337848988
+2025-03-31 19:09:09,965 INFO     Test accuracy 0.5585, Test Loss 1.2578149559134144
+2025-03-31 19:09:09,966 INFO     Training model 0 took 81.48766899108887 seconds
+2025-03-31 19:09:09,970 INFO     --------------------------------------------------
+2025-03-31 19:09:09,970 INFO     Training model 1: Train size 30000, Test size 30000
+2025-03-31 19:11:10,611 INFO     Train accuracy 0.5532, Train Loss 1.2545960171748016
+2025-03-31 19:11:10,612 INFO     Test accuracy 0.5188666666666667, Test Loss 1.352443101042408
+2025-03-31 19:11:10,612 INFO     Training model 1 took 120.64216995239258 seconds
+2025-03-31 19:11:10,615 INFO     --------------------------------------------------
+2025-03-31 19:11:10,615 INFO     Training model 2: Train size 30000, Test size 30000
+2025-03-31 19:13:10,903 INFO     Train accuracy 0.5907333333333333, Train Loss 1.157987047049959
+2025-03-31 19:13:10,904 INFO     Test accuracy 0.5620666666666667, Test Loss 1.239836904962184
+2025-03-31 19:13:10,904 INFO     Training model 2 took 120.28938484191895 seconds
+2025-03-31 19:13:10,907 INFO     --------------------------------------------------
+2025-03-31 19:13:10,907 INFO     Training model 3: Train size 30000, Test size 30000
+2025-03-31 19:15:12,957 INFO     Train accuracy 0.5849666666666666, Train Loss 1.168774691173586
+2025-03-31 19:15:12,958 INFO     Test accuracy 0.5487, Test Loss 1.2697993537126961
+2025-03-31 19:15:12,958 INFO     Training model 3 took 122.05062627792358 seconds
+2025-03-31 19:15:12,961 INFO     --------------------------------------------------
+2025-03-31 19:15:12,961 INFO     Training model 4: Train size 30000, Test size 30000
+2025-03-31 19:17:14,435 INFO     Train accuracy 0.5803666666666667, Train Loss 1.1839561310865112
+2025-03-31 19:17:14,436 INFO     Test accuracy 0.5470666666666667, Test Loss 1.2699505888809592
+2025-03-31 19:17:14,436 INFO     Training model 4 took 121.47557401657104 seconds
+2025-03-31 19:17:14,440 INFO     --------------------------------------------------
+2025-03-31 19:17:14,440 INFO     Training model 5: Train size 30000, Test size 30000
+2025-03-31 19:19:23,417 INFO     Train accuracy 0.5911, Train Loss 1.1686503220412692
+2025-03-31 19:19:23,418 INFO     Test accuracy 0.548, Test Loss 1.2709680290545446
+2025-03-31 19:19:23,419 INFO     Training model 5 took 128.97833395004272 seconds
+2025-03-31 19:19:23,421 INFO     --------------------------------------------------
+2025-03-31 19:19:23,422 INFO     Training model 6: Train size 30000, Test size 30000
+2025-03-31 19:21:34,214 INFO     Train accuracy 0.5568333333333333, Train Loss 1.242626135632143
+2025-03-31 19:21:34,215 INFO     Test accuracy 0.5293666666666667, Test Loss 1.3101338077399691
+2025-03-31 19:21:34,215 INFO     Training model 6 took 130.79388689994812 seconds
+2025-03-31 19:21:34,219 INFO     --------------------------------------------------
+2025-03-31 19:21:34,219 INFO     Training model 7: Train size 30000, Test size 30000
+2025-03-31 19:24:13,109 INFO     Train accuracy 0.5701, Train Loss 1.1975059347637629
+2025-03-31 19:24:13,110 INFO     Test accuracy 0.5399, Test Loss 1.2916734945976127
+2025-03-31 19:24:13,111 INFO     Training model 7 took 158.89192485809326 seconds
+2025-03-31 19:24:13,114 INFO     --------------------------------------------------
+2025-03-31 19:24:13,114 INFO     Training model 8: Train size 30000, Test size 30000
+2025-03-31 19:26:41,012 INFO     Train accuracy 0.5806666666666667, Train Loss 1.1771056121688779
+2025-03-31 19:26:41,013 INFO     Test accuracy 0.5452333333333333, Test Loss 1.2754050139653481
+2025-03-31 19:26:41,014 INFO     Training model 8 took 147.90052390098572 seconds
+2025-03-31 19:26:41,019 INFO     --------------------------------------------------
+2025-03-31 19:26:41,019 INFO     Training model 9: Train size 30000, Test size 30000
+2025-03-31 19:29:22,532 INFO     Train accuracy 0.5790666666666666, Train Loss 1.1893860556311526
+2025-03-31 19:29:22,533 INFO     Test accuracy 0.5554333333333333, Test Loss 1.2540614852460765
+2025-03-31 19:29:22,533 INFO     Training model 9 took 161.51398301124573 seconds
+2025-03-31 19:30:05,368 INFO     Model loading/training took 1336.9 seconds
+2025-03-31 19:30:35,471 INFO     Signals saved to disk.
+2025-03-31 19:30:35,481 INFO     Preparing signals took 30.11318 seconds
+2025-03-31 19:30:35,482 INFO     Fine-tuning offline_a using paired model 1
+2025-03-31 19:30:35,494 INFO     offline_a=0.00: AUC 0.5273
+2025-03-31 19:30:35,503 INFO     offline_a=0.10: AUC 0.5281
+2025-03-31 19:30:35,511 INFO     offline_a=0.20: AUC 0.5289
+2025-03-31 19:30:35,520 INFO     offline_a=0.30: AUC 0.5298
+2025-03-31 19:30:35,529 INFO     offline_a=0.40: AUC 0.5309
+2025-03-31 19:30:35,537 INFO     offline_a=0.50: AUC 0.5319
+2025-03-31 19:30:35,546 INFO     offline_a=0.60: AUC 0.5331
+2025-03-31 19:30:35,554 INFO     offline_a=0.70: AUC 0.5344
+2025-03-31 19:30:35,563 INFO     offline_a=0.80: AUC 0.5356
+2025-03-31 19:30:35,571 INFO     offline_a=0.90: AUC 0.5367
+2025-03-31 19:30:35,580 INFO     offline_a=1.00: AUC 0.5341
+2025-03-31 19:30:35,580 INFO     The best offline_a is 0.9
+2025-03-31 19:30:35,592 INFO     Target Model 0: AUC 0.5448, TPR@0.1%FPR of 0.0022, TPR@0.0%FPR of 0.0000
+2025-03-31 19:30:39,532 INFO     Auditing the privacy risks of target model 0 costs 4.1 seconds
+2025-03-31 19:30:39,532 INFO     Total runtime: 1371.09111 seconds
