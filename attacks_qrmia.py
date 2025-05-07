@@ -3,7 +3,7 @@ from typing import Any
 import numpy as np
 from sklearn.metrics import auc, roc_curve
 from sympy.physics.quantum.tests.test_qubit import epsilon
-
+from sklearn.linear_model import QuantileRegressor
 
 def get_rmia_out_signals(
     all_signals: np.ndarray,
@@ -96,6 +96,8 @@ def run_rmia(
     all_memberships: np.ndarray,
     num_reference_models: int,
     offline_a: float,
+    use_qrmia: bool = False,
+    threshold_predictor: Any = None,
 ) -> np.ndarray:
     """
     Attack a target model using the RMIA attack with the help of offline reference models.
@@ -134,7 +136,13 @@ def run_rmia(
     prob_ratio_z = z_signals.ravel() / mean_z
 
     ratios = prob_ratio_x[:, np.newaxis] / (prob_ratio_z + 1e-8)
-    counts = np.average(ratios > 1.0, axis=1)     # lamda  = 1
+
+    if use_qrmia and threshold_predictor is not None:
+        lambda_x = threshold_predictor.predict(prob_ratio_x.reshape(-1, 1)) # shape (N,)
+        lambda_x = lambda_x[:, np.newaxis]  # shape (N,1) for broadcasting
+        counts = np.average(ratios > lambda_x, axis=1)
+    else:
+        counts = np.average(ratios > 1.0, axis=1)     # lamda  = 1
 
     return counts
 
@@ -151,3 +159,56 @@ def run_loss(target_signals: np.ndarray) -> np.ndarray:
     """
     mia_scores = -target_signals
     return mia_scores
+
+
+from sklearn.linear_model import QuantileRegressor
+import numpy as np
+
+def train_qrmia_regressor(
+    population_signals: np.ndarray,
+    all_signals: np.ndarray,
+    all_memberships: np.ndarray,
+    target_model_idx: int,
+    num_reference_models: int,
+    offline_a: float,
+    beta: float = 0.05,
+):
+    """
+    QRMIA-style training:
+    - Use softmax-derived features as input.
+    - Use RMIA scores under λ=1 as training target.
+    - Fit a quantile regressor (minimize pinball loss).
+    """
+
+    from attacks_qrmia import run_rmia  # or use relative import
+
+    # —— Step 1: Use population as non-members to compute RMIA scores ——
+    pop_scores = run_rmia(
+        target_model_idx=target_model_idx,
+        all_signals=population_signals,
+        population_signals=all_signals,
+        all_memberships=np.zeros_like(population_signals, dtype=bool),
+        num_reference_models=num_reference_models,
+        offline_a=offline_a,
+        use_qrmia=False  # λ = 1
+    )
+
+    # —— Step 2: Extract features φ(x) from target model's softmax outputs ——
+    target_softmax = population_signals[:, target_model_idx]  # shape (N, C)
+
+    # Feature choices: softmax mean, max, std
+    feature_mean = np.mean(target_softmax, axis=1, keepdims=True)
+    feature_max  = np.max(target_softmax, axis=1, keepdims=True)
+    feature_std  = np.std(target_softmax, axis=1, keepdims=True)
+
+    X = np.concatenate([feature_mean, feature_max, feature_std], axis=1)  # shape (N, 3)
+    y = np.array(pop_scores)  # RMIA scores (S(x))
+
+    # —— Step 3: Quantile Regression using pinball loss ——
+    qr = QuantileRegressor(
+        quantile=1 - beta,
+        alpha=0.0,          # no L2 penalty
+        solver="highs"      # stable and accurate
+    ).fit(X, y)
+
+    return qr

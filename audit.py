@@ -11,7 +11,7 @@ import torch.utils.data
 from sklearn.metrics import roc_curve, auc
 from torch.utils.data import Subset
 
-from attacks import tune_offline_a, run_rmia, run_loss
+from attacks_qrmia import tune_offline_a, run_rmia, run_loss, train_qrmia_regressor
 from modules.ramia.ramia_scores import get_topk, get_bottomk, trim_mia_scores
 from visualize import plot_roc, plot_roc_log, plot_eps_vs_num_guesses
 
@@ -60,9 +60,10 @@ def get_audit_results(report_dir, model_idx, mia_scores, target_memberships, log
     attack_result = compute_attack_results(mia_scores, target_memberships)
     Path(report_dir).mkdir(parents=True, exist_ok=True)
     logger.info(
-        "Target Model %d: AUC %.4f, TPR@0.1%%FPR of %.4f, TPR@0.0%%FPR of %.4f",
+        "Target Model %d: AUC %.4f, TPR@1%%FPR of %.4f, TPR@0.1%%FPR of %.4f, TPR@0.0%%FPR of %.4f",
         model_idx,
         attack_result["auc"],
+        attack_result["one_fpr"],
         attack_result["one_tenth_fpr"],
         attack_result["zero_fpr"],
     )
@@ -85,6 +86,7 @@ def get_audit_results(report_dir, model_idx, mia_scores, target_memberships, log
         fpr=attack_result["fpr"],
         tpr=attack_result["tpr"],
         auc=attack_result["auc"],
+        one_fpr=attack_result["one_fpr"],
         one_tenth_fpr=attack_result["one_tenth_fpr"],
         zero_fpr=attack_result["zero_fpr"],
         scores=mia_scores.ravel(),
@@ -191,6 +193,39 @@ def audit_models(
                 all_memberships,
                 num_reference_models,
                 offline_a,
+            )
+
+        elif configs["audit"]["algorithm"] == "QRMIA":
+            offline_a = tune_offline_a(
+                target_model_idx,
+                all_signals,
+                population_signals,
+                all_memberships,
+                logger,
+            )[0]
+            logger.info(f"The best offline_a is %0.1f", offline_a)
+
+            # train the quantile regression model
+            qr_model = train_qrmia_regressor(
+                population_signals=population_signals,
+                all_signals=all_signals,
+                all_memberships=all_memberships,
+                target_model_idx=target_model_idx,
+                num_reference_models=configs["audit"]["num_ref_models"],
+                offline_a=offline_a,
+                # beta=configs["qmia"]["beta"]
+                beta=0.05
+            )
+
+            mia_scores = run_rmia(
+                target_model_idx,
+                all_signals,
+                population_signals,
+                all_memberships,
+                num_reference_models,
+                offline_a,
+                use_qrmia=True,
+                threshold_predictor=qr_model,
             )
         elif configs["audit"]["algorithm"] == "LOSS":
             mia_scores = run_loss(all_signals[:, target_model_idx])

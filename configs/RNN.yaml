@@ -1,0 +1,33 @@
+run: # Configurations for a specific run
+  random_seed: 12345 # Integer number of specifying random seed
+  log_dir: rnn_rmia_ep-400_ref-4 # String for indicating where to save all the information, including models and computed signals. We can reuse the models saved in the same log_dir.
+  time_log: True # Indicate whether to log the time for each step
+  num_experiments: 1 # Number of total experiments
+
+audit: # Configurations for auditing
+  privacy_game: privacy_loss_model # Indicate the privacy game from privacy_loss_model
+  algorithm: RMIA # String for indicating the membership inference attack. We currently support the RMIA introduced by Zarifzadeh et al. 2024(https://openreview.net/pdf?id=sT7UJh5CTc)) and the LOSS attacks
+  num_ref_models: 4   # 4 # Number of reference models used to audit each target model
+  # device: cuda:0 # String for indicating the device we want to use for inferring signals and auditing models
+  device: mps # String for indicating the device we want to use for inferring signals and auditing models
+  report_log: report_rmia # String that indicates the folder where we save the log and auditing report
+  batch_size: 5000 # Integer number for indicating batch size for evaluating models and inferring signals.
+#  data_size: 10000 # Integer number for indicating the size of the dataset in auditing. If not specified, the entire dataset is used.
+
+train: # Configuration for training
+  model_name: RNN # String for indicating the model type. We support CNN, wrn28-1, wrn28-2, wrn28-10, vgg16, mlp and speedyresnet (requires cuda). More model types can be added in model.py.
+  # device: cuda:0 # String for indicating the device we want to use for training models.
+  device: mps # String for indicating the device we want to use for training models.
+  batch_size: 256
+  optimizer: SGD
+  learning_rate: 0.1
+  weight_decay: 0.0001
+  epochs: 400   # 100 for real, 5 for test
+
+data: # Configuration for data
+  dataset: london_energy # 支持图像数据集cifar10, cifar100, purchase100，文本数据集texas100，时序数据集london
+  data_dir: data
+  input_size: 1 # Integer number for indicating the input size of the model. The default value is 1.
+  output_size: 1 # Integer number for indicating the output size of the model. The default value is 1.
+  history_length: 30 # Integer number for indicating the history length of the model. The default value is 10.
+  forward_length: 10 # Integer number for indicating the forward length of the model. The default value is 10.

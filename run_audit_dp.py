@@ -14,7 +14,7 @@ from audit import (
     get_all_dp_audit_results,
     get_dp_audit_results_for_k_pos_k_neg,
 )
-from get_signals import get_model_signals
+from get_signals_ts import get_model_signals
 from models.utils import load_models, dp_load_models, train_models, dp_train_models
 from util import (
     check_configs,

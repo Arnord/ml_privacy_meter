@@ -1,5 +1,5 @@
-"""This file is the main entry point for running the privacy auditing tool."""
-
+"""Try to achieve MIA For timeseries Model"""
+# TODO： 废案
 import argparse
 import math
 import pdb
@@ -27,7 +27,7 @@ torch.backends.cudnn.benchmark = True
 
 def main():
     print(20 * "-")
-    print("Privacy Meter Tool!")
+    print("Time Series Privacy Meter Tool!")
     print(20 * "-")
 
     # Parse arguments
@@ -83,6 +83,7 @@ def main():
         log_dir, dataset, num_model_pairs * 2, configs, logger
     )
     # models_list = None   # for test remember to del
+    # TODO: 模型分割的部分可能还会有问题
     if models_list is None:
         # Split dataset for training two models per pair
         data_splits, memberships = split_dataset_for_training(

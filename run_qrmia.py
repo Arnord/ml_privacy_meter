@@ -11,7 +11,7 @@ import yaml
 from torch.utils.data import Subset
 
 from audit import get_average_audit_results, audit_models, sample_auditing_dataset
-from get_signals_ts import get_model_signals
+from get_signals import get_model_signals
 from models.utils import load_models, train_models, split_dataset_for_training
 from util import (
     check_configs,
@@ -115,6 +115,14 @@ def main():
         models_list, population, configs, logger, is_population=True
     )
     logger.info("Preparing signals took %0.5f seconds", time.time() - baseline_time)
+
+    # # QRMIA SETP1: 在非成员人口样本上计算RMIA得分S(z)作为分位回归训练标签
+    # pop_scores = []
+    # gamma = configs["audit"]["gamma"]
+    # for idx in
+
+
+
 
     # Perform the privacy audit
     baseline_time = time.time()
