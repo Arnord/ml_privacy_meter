@@ -2,8 +2,8 @@ from typing import Any
 
 import numpy as np
 from sklearn.metrics import auc, roc_curve
-from sympy.physics.quantum.tests.test_qubit import epsilon
 from sklearn.linear_model import QuantileRegressor
+from typing import Tuple, Optional
 
 def get_rmia_out_signals(
     all_signals: np.ndarray,
@@ -89,29 +89,30 @@ def tune_offline_a(
     return offline_a, mia_scores_array, membership_array
 
 
-def run_rmia(
+def compute_prob_ratio(
     target_model_idx: int,
     all_signals: np.ndarray,
     population_signals: np.ndarray,
     all_memberships: np.ndarray,
     num_reference_models: int,
     offline_a: float,
-    use_qrmia: bool = False,
-    threshold_predictor: Any = None,
-) -> np.ndarray:
+) -> (np.ndarray, np.ndarray, np.ndarray):
     """
-    Attack a target model using the RMIA attack with the help of offline reference models.
-
+    Compute the probability ratio for RMIA attack.
+    The probability ratio is defined as:
+        p(x) / p(z) = P_out(x) / P_out(z)
+    where P_out(x) is the average prediction probability of x over OUT reference models.
     Args:
         target_model_idx (int): Index of the target model.
-        all_signals (np.ndarray): Softmax value of all samples in the target model.
+        all_signals (np.ndarray): Softmax value of all samples in every model.
         population_signals (np.ndarray): Softmax value of all population samples in the target model.
         all_memberships (np.ndarray): Membership matrix for all models.
         num_reference_models (int): Number of reference models used for the attack.
         offline_a (float): Coefficient offline_a is used to approximate p(x) using P_out in the offline setting.
-
     Returns:
-        np.ndarray: MIA score for all samples (a larger score indicates higher chance of being member).
+        np.ndarray: Probability ratio for all samples.
+        np.ndarray: Probability ratio for target model samples.
+        np.ndarray: Probability ratio for population samples.
     """
     target_signals = all_signals[:, target_model_idx]
     out_signals = get_rmia_out_signals(
@@ -135,14 +136,70 @@ def run_rmia(
     mean_z = (1 + offline_a) / 2 * mean_out_z + (1 - offline_a) / 2
     prob_ratio_z = z_signals.ravel() / mean_z
 
-    ratios = prob_ratio_x[:, np.newaxis] / (prob_ratio_z + 1e-8)
+    log_x = np.log(prob_ratio_x + 1e-8)
+    log_z = np.log(prob_ratio_z + 1e-8)
+    ratios = log_x[:, np.newaxis] - log_z
+
+    # ratios = prob_ratio_x[:, np.newaxis] / (prob_ratio_z + 1e-8)
+
+    # Debugging information
+    # print("prob_ratio_x:", np.percentile(prob_ratio_x, [0, 25, 50, 75, 100]))
+    # print("prob_ratio_z:", np.percentile(prob_ratio_z, [0, 25, 50, 75, 100]))
+
+
+    # return ratios, prob_ratio_x, prob_ratio_z
+    return ratios, log_x, log_z
+
+
+def run_rmia(
+    target_model_idx: int,
+    all_signals: np.ndarray,
+    population_signals: np.ndarray,
+    all_memberships: np.ndarray,
+    num_reference_models: int,
+    offline_a: float,
+    use_qrmia: bool = False,
+    threshold_predictor: Any = None,
+) -> np.ndarray:
+    """
+    Attack a target model using the RMIA attack with the help of offline reference models.
+
+    Args:
+        target_model_idx (int): Index of the target model.
+        all_signals (np.ndarray): Softmax value of all samples in the target model.
+        population_signals (np.ndarray): Softmax value of all population samples in the target model.
+        all_memberships (np.ndarray): Membership matrix for all models.
+        num_reference_models (int): Number of reference models used for the attack.
+        offline_a (float): Coefficient offline_a is used to approximate p(x) using P_out in the offline setting.
+        use_qrmia (bool): Whether to use QRMIA or RMIA.
+        threshold_predictor (Any): Trained quantile regressor for QRMIA.
+    Returns:
+        np.ndarray: MIA score for all samples (a larger score indicates higher chance of being member).
+    """
+    ratios, _, _ = compute_prob_ratio(
+        target_model_idx,
+        all_signals,
+        population_signals,
+        all_memberships,
+        num_reference_models,
+        offline_a,
+    )
+
+    # Debugging information
+    # print("target_signals (sample):", target_signals[:5])
+    # print("mean_x (sample):", mean_x[:5])
+    # print("prob_ratio_x (sample):", prob_ratio_x[:5])
+    # print("prob_ratio_z (sample):", prob_ratio_z[:5])
+    # print("ratios (sample):", ratios[:5, :5])
+
 
     if use_qrmia and threshold_predictor is not None:
-        lambda_x = threshold_predictor.predict(prob_ratio_x.reshape(-1, 1)) # shape (N,)
+        target_signals = all_signals[:, target_model_idx].reshape(-1, 1)  # shape (N,1)
+        lambda_x = threshold_predictor.predict(np.log(target_signals + 1e-8)) # shape (N,)
         lambda_x = lambda_x[:, np.newaxis]  # shape (N,1) for broadcasting
         counts = np.average(ratios > lambda_x, axis=1)
     else:
-        counts = np.average(ratios > 1.0, axis=1)     # lamda  = 1
+        counts = np.average(ratios > 1, axis=1)     # lamda  = 1
 
     return counts
 
@@ -161,9 +218,6 @@ def run_loss(target_signals: np.ndarray) -> np.ndarray:
     return mia_scores
 
 
-from sklearn.linear_model import QuantileRegressor
-import numpy as np
-
 def train_qrmia_regressor(
     population_signals: np.ndarray,
     all_signals: np.ndarray,
@@ -172,6 +226,7 @@ def train_qrmia_regressor(
     num_reference_models: int,
     offline_a: float,
     beta: float = 0.05,
+    configs: Optional[dict] = None,
 ):
     """
     QRMIA-style training:
@@ -180,29 +235,26 @@ def train_qrmia_regressor(
     - Fit a quantile regressor (minimize pinball loss).
     """
 
-    from attacks_qrmia import run_rmia  # or use relative import
-
     # —— Step 1: Use population as non-members to compute RMIA scores ——
-    pop_scores = run_rmia(
+    # split population into two halves
+    population_signals_x, population_signals_z = split_population(population_signals, train_ratio=0.8, seed=configs["run"]["random_seed"])
+
+    S_x, _, _ = compute_prob_ratio(
         target_model_idx=target_model_idx,
-        all_signals=population_signals,
-        population_signals=all_signals,
-        all_memberships=np.zeros_like(population_signals, dtype=bool),
+        all_signals=population_signals_x,
+        population_signals=population_signals_z,
+        all_memberships=np.zeros_like(population_signals_x, dtype=bool),
         num_reference_models=num_reference_models,
         offline_a=offline_a,
-        use_qrmia=False  # λ = 1
     )
 
     # —— Step 2: Extract features φ(x) from target model's softmax outputs ——
-    target_softmax = population_signals[:, target_model_idx]  # shape (N, C)
+    # 相当于用x的特征来预测对应RMIA S(x)的非成员阈值
+    target_singles = population_signals_x[:, target_model_idx]  # shape (N,)
 
-    # Feature choices: softmax mean, max, std
-    feature_mean = np.mean(target_softmax, axis=1, keepdims=True)
-    feature_max  = np.max(target_softmax, axis=1, keepdims=True)
-    feature_std  = np.std(target_softmax, axis=1, keepdims=True)
-
-    X = np.concatenate([feature_mean, feature_max, feature_std], axis=1)  # shape (N, 3)
-    y = np.array(pop_scores)  # RMIA scores (S(x))
+    X = np.log(target_singles.reshape(-1,1) + 1e-8)  # shape (N, 1)     # 可尝试扩展更多特征，即多分类的softmax，理论上效果会更好
+    y = np.quantile(S_x, q=1-beta, axis=1) # shape (N,)
+    # y = np.mean(S_x, axis=1)  # shape (N,)   # 直接用均值
 
     # —— Step 3: Quantile Regression using pinball loss ——
     qr = QuantileRegressor(
@@ -212,3 +264,26 @@ def train_qrmia_regressor(
     ).fit(X, y)
 
     return qr
+
+
+def split_population(
+    population_signals: np.ndarray,
+    train_ratio: float = 0.5,
+    seed: Optional[int] = None
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    将 population_signals 随机拆分为 train / eval 两部分。
+    Use for QRMIA中的分位数回归器训练
+    Args:
+        population_signals: shape (N, M, C)
+        train_ratio:     用于训练回归器的比例（剩下用于 eval）
+        seed:            随机种子，便于复现
+
+    Returns:
+        pop_train, pop_eval
+    """
+    N = population_signals.shape[0]
+    rng = np.random.default_rng(seed)
+    idx = rng.permutation(N)
+    split = int(train_ratio * N)
+    return population_signals[idx[:split]], population_signals[idx[split:]]

@@ -12,9 +12,9 @@ from sklearn.metrics import roc_curve, auc
 from torch.utils.data import Subset
 
 from attacks_qrmia import tune_offline_a, run_rmia, run_loss, train_qrmia_regressor
+# from attacks import tune_offline_a, run_rmia, run_loss
 from modules.ramia.ramia_scores import get_topk, get_bottomk, trim_mia_scores
 from visualize import plot_roc, plot_roc_log, plot_eps_vs_num_guesses
-
 
 def compute_attack_results(mia_scores, target_memberships):
     """
@@ -199,7 +199,7 @@ def audit_models(
             offline_a = tune_offline_a(
                 target_model_idx,
                 all_signals,
-                population_signals,
+                population_signals, # use for RMIA ratio_z
                 all_memberships,
                 logger,
             )[0]
@@ -207,14 +207,15 @@ def audit_models(
 
             # train the quantile regression model
             qr_model = train_qrmia_regressor(
-                population_signals=population_signals,
+                population_signals,
                 all_signals=all_signals,
                 all_memberships=all_memberships,
                 target_model_idx=target_model_idx,
                 num_reference_models=configs["audit"]["num_ref_models"],
                 offline_a=offline_a,
                 # beta=configs["qmia"]["beta"]
-                beta=0.05
+                beta=0.05,
+                configs=configs
             )
 
             mia_scores = run_rmia(
@@ -223,7 +224,7 @@ def audit_models(
                 population_signals,
                 all_memberships,
                 num_reference_models,
-                offline_a,
+                offline_a,  # 这个offline_a后续可以再重新筛选一下，因为判定阈值不同了
                 use_qrmia=True,
                 threshold_predictor=qr_model,
             )

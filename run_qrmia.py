@@ -4,10 +4,15 @@ import argparse
 import math
 import pdb
 import time
+import os
+import re
+import datetime
+import pprint
 
 import numpy as np
 import torch
 import yaml
+from jupyter_server.transutils import base_dir
 from torch.utils.data import Subset
 
 from audit import get_average_audit_results, audit_models, sample_auditing_dataset
@@ -51,7 +56,16 @@ def main():
     initialize_seeds(configs["run"]["random_seed"])
 
     # Create necessary directories + send dr to result/
-    log_dir = 'result/' + configs["run"]["log_dir"]
+    log_dir = configs["run"]["log_dir"]
+    if re.search(r"\d{8}_\d{6}", log_dir):
+        log_dir = log_dir  # load model
+    else:
+        time_now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        if configs["run"]["log_dir"] == "test":
+            log_dir = os.path.join("result", configs["audit"]["algorithm"], "test", time_now)
+        else:
+            log_dir = os.path.join(base_dir, configs["audit"]["algorithm"], time_now)
+
     directories = {
         "log_dir": log_dir,
         "report_dir": f"{log_dir}/report",
@@ -64,6 +78,13 @@ def main():
     logger = setup_log(
         directories["report_dir"], "time_analysis", configs["run"]["time_log"]
     )
+    logger.info("Log directory: %s", log_dir)
+
+    # Log the configuration
+    logger.info("===== Loaded Configuration =====")
+    logger.info("\n" + pprint.pformat(configs, width=120))
+    logger.info("================================")
+
 
     start_time = time.time()
 
@@ -115,14 +136,6 @@ def main():
         models_list, population, configs, logger, is_population=True
     )
     logger.info("Preparing signals took %0.5f seconds", time.time() - baseline_time)
-
-    # # QRMIA SETP1: 在非成员人口样本上计算RMIA得分S(z)作为分位回归训练标签
-    # pop_scores = []
-    # gamma = configs["audit"]["gamma"]
-    # for idx in
-
-
-
 
     # Perform the privacy audit
     baseline_time = time.time()
