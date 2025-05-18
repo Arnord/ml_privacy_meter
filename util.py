@@ -102,7 +102,7 @@ def load_dataset(configs: Dict[str, Any], data_dir: str, logger: logging.Logger)
         Any: Loaded dataset.
     """
     if not configs["data"].get("tokenize", False):
-        return get_dataset(configs["data"]["dataset"], data_dir, logger, configs)
+        return get_dataset(configs["data"]["dataset"], data_dir, logger)
     return get_dataset(
         configs["data"]["dataset"],
         data_dir,
