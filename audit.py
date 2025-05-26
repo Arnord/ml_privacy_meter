@@ -217,10 +217,11 @@ def audit_models(
                 offline_a=offline_a,
                 num_reference_models=configs["audit"]["num_ref_models"],
                 beta=configs["audit"]["beta"],
-                method= configs["audit"]["method"],
+                method=configs["audit"]["method"],
+                loss_fun=configs["audit"]["loss_fun"],
             )
 
-            mia_scores = run_rmia(
+            mia_scores = run_rmia(          # TODO 这里后续改为run_qrmia
                 target_model_idx,
                 all_signals,
                 population_signals,

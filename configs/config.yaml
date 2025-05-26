@@ -15,6 +15,7 @@ audit: # Configurations for auditing
 #  data_size: 10000 # Integer number for indicating the size of the dataset in auditing. If not specified, the entire dataset is used.
   method: mlp # String for indicating the method used to compute the QRMIA score. We currently support sklearn and mlp.
   beta: 0.1 # Float number for indicating the beta parameter in the QRMIA score. The default value is 0.05.
+  loss_fun: pinball # String for indicating the loss function used in the QRMIA score. We currently support pinball and gaussian.
 train: # Configuration for training
   model_name: wrn28-1 # String for indicating the model type. We support CNN, wrn28-1, wrn28-2, wrn28-10, vgg16, mlp and speedyresnet (requires cuda). More model types can be added in model.py.
   # device: cuda:0 # String for indicating the device we want to use for training models.

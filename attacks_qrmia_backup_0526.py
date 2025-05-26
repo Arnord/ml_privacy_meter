@@ -20,8 +20,6 @@ from typing import Tuple, Optional
 from torch.ao.nn.quantized.functional import threshold
 from tornado.gen import multi, multi_future
 
-MEAN = 0
-STD = 0
 
 def get_rmia_out_signals(
     all_signals: np.ndarray,
@@ -109,40 +107,6 @@ def tune_offline_a(
         logger.info(f"offline_a={test_a:.2f}: AUC {roc_auc:.4f}")
     return offline_a, mia_scores_array, membership_array
 
-from scipy.special import rel_entr
-def compute_kl_based_ratios(      # TODO 分布-level的函数组，但目前还未嵌入主体函数中，待测试
-    target_model_idx: int,
-    all_signals: np.ndarray,
-    population_signals: np.ndarray,
-    all_memberships: np.ndarray,
-    num_reference_models: int,
-    offline_a: float,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Compute RMIA-style score using KL divergence between S(x) and S(z) distributions.
-    Args and returns are similar to compute_prob_ratio.
-    """
-    out_signals_x = get_rmia_out_signals(
-        all_signals, all_memberships, target_model_idx, num_reference_models
-    )
-    out_signals_z = get_rmia_out_signals(
-        population_signals,
-        np.zeros_like(population_signals, dtype=bool),
-        target_model_idx,
-        num_reference_models,
-    )
-
-    # Normalize to form pseudo-distributions (row-wise)
-    px = out_signals_x + 1e-8
-    px /= np.sum(px, axis=1, keepdims=True)
-    pz = out_signals_z + 1e-8
-    pz /= np.sum(pz, axis=1, keepdims=True)
-
-    # KL(Px || Pz)
-    # px: (N_x, k), pz: (N_z, k)
-    # Compute KL for each (x, z) pair: sum_k px[i, k] * log(px[i, k]/pz[j, k])
-    kl_div = np.sum(rel_entr(px[:, np.newaxis, :], pz[np.newaxis, :, :]), axis=-1)  # shape (N_x, N_z)
-    return kl_div, px, pz
 
 def compute_prob_ratio(
     target_model_idx: int,
@@ -151,7 +115,7 @@ def compute_prob_ratio(
     all_memberships: np.ndarray,
     num_reference_models: int,
     offline_a: float,
-    y_transform: str = "standard",          # TODO y变换从这里修改
+    y_transform: str = "none",
 ) -> (np.ndarray, np.ndarray, np.ndarray):
     """
     Compute the probability ratio for RMIA attack.
@@ -193,13 +157,17 @@ def compute_prob_ratio(
     mean_z = (1 + offline_a) / 2 * mean_out_z + (1 - offline_a) / 2
     prob_ratio_z = z_signals.ravel() / mean_z
 
+    # use_log = False
+
     def safe_logit(p, eps=1e-8):
         return np.log(p + eps) - np.log(1 - p + eps)
 
-    if y_transform == "log":   # TODO: 目前只有log变换理论确定没有问题，其余变换还需理论验证
+    y_transform = "log"
+
+    if y_transform == "log":
         prob_ratio_x = np.log(prob_ratio_x + 1e-8)
         prob_ratio_z = np.log(prob_ratio_z + 1e-8)
-        ratios = prob_ratio_x[:, np.newaxis] - prob_ratio_z
+        ratios = prob_ratio_x[:, np.newaxis] - prob_ratio_z   # TODO 获取不应该直接对比值作log运算，应该对softmax信号作log处理
 
     elif y_transform == "log1p":
         prob_ratio_x = np.log1p(prob_ratio_x)
@@ -212,15 +180,8 @@ def compute_prob_ratio(
         ratios = prob_ratio_x[:, np.newaxis] - prob_ratio_z
 
     elif y_transform == "standard":
-        global MEAN, STD
-        if MEAN != 0 or STD != 0:
-            mean = MEAN
-            std = STD
-        else:
-            mean = np.mean(prob_ratio_x)
-            std = np.std(prob_ratio_x) + 1e-8
-            MEAN = mean
-            STD = std
+        mean = np.mean(prob_ratio_x)
+        std = np.std(prob_ratio_x) + 1e-8
         prob_ratio_x = (prob_ratio_x - mean) / std
         prob_ratio_z = (prob_ratio_z - mean) / std
         ratios = prob_ratio_x[:, np.newaxis] - prob_ratio_z
@@ -237,10 +198,20 @@ def compute_prob_ratio(
     else:
         raise ValueError(f"Unsupported y_transform: {y_transform}")
 
+    # if use_log:
+    #     # log变换以使得softmax比值趋紧高斯分布
+    #     prob_ratio_x = np.log(prob_ratio_x + 1e-8)
+    #     prob_ratio_z = np.log(prob_ratio_z + 1e-8)
+    #     ratios = prob_ratio_x[:, np.newaxis] - prob_ratio_z
+    # else:
+    #     ratios = prob_ratio_x[:, np.newaxis] / (prob_ratio_z + 1e-8)
+
     # Debugging information
     # print("prob_ratio_x:", np.percentile(prob_ratio_x, [0, 25, 50, 75, 100]))
     # print("prob_ratio_z:", np.percentile(prob_ratio_z, [0, 25, 50, 75, 100]))
 
+
+    # return ratios, prob_ratio_x, prob_ratio_z
     return ratios, prob_ratio_x, prob_ratio_z
 
 
@@ -295,14 +266,12 @@ def run_rmia(
         lambda_x = predict_qrmia_lambda(model=threshold_predictor, X=X, method=method)
         lambda_x = lambda_x[:, np.newaxis]  # shape (N,1) for broadcasting
 
-        # plt.hist(np.mean(ratios, axis=1), bins=100)
-        # plt.title("Ratios distribution")
-        # plt.show()
+        plt.hist(np.mean(ratios, axis=1), bins=100)
+        plt.title("Ratios distribution")
+        plt.show()
 
         # plt审计
         plot_ratios_vs_lambda(ratios, lambda_x)
-
-        lambda_x = np.clip(lambda_x, 0, 5)  # 限幅，避免极端值影响
 
         counts = np.average(ratios > lambda_x, axis=1)   # 求的是x在z中大于阈值的比例
     else:
@@ -333,7 +302,6 @@ def train_qrmia_regressor(
     num_reference_models: int,
     beta: float,
     method: str,      # "sklearn" or "mlp"
-    loss_fun: str = "pinball",  # "pinball" or "gaussian"
 ):
     """
     QRMIA-style training:
@@ -361,21 +329,26 @@ def train_qrmia_regressor(
     # z_signals = population_signals[:, target_model_idx]# shape (N,)
     X = build_X_features(target_singles)
     # X = np.log(target_singles.reshape(-1,1) + 1e-8)  # shape (N, 1)     # 可尝试扩展更多特征，即多分类的softmax，理论上效果会更好
-    # y = np.quantile(S_x, q=0.6, axis=1)  # 用中位数近似0.5， 0.6， 0.7 # shape (N,)
-    y = np.median(S_x, axis=1)  # shape (N,)   # 直接用中位数作为阈值
+    y = np.quantile(S_x, q=0.6, axis=1)  # 用中位数近似0.5， 0.6， 0.7 # shape (N,)
     # y = np.mean(S_x, axis=1)  # shape (N, )  TODO 均值可能会受到极端值影响
-    y += np.random.normal(0, 1e-3, size=y.shape)  # 添加微小噪声，避免模型塌陷
+    # 验证y的分布
+    plt.hist(y, bins=100)
+    plt.title("Target λ(x) distribution_1")
+    plt.show()
 
-    # # Step 1: 用 1% - 99% 分位点 clip 掉极端值
-    # lower = np.quantile(y, 0.01)
-    # upper = np.quantile(y, 0.99)
-    # y = np.clip(y, lower, upper)
+    # Step 1: 用 1% - 99% 分位点 clip 掉极端值
+    lower = np.quantile(y, 0.01)
+    upper = np.quantile(y, 0.99)
+    y = np.clip(y, lower, upper)
 
     # # Step 2: Robust 标准化
     # from sklearn.preprocessing import RobustScaler
     # scaler = RobustScaler(quantile_range=(5, 95))
     # y = scaler.fit_transform(y.reshape(-1, 1)).flatten()
 
+    plt.hist(y, bins=100)
+    plt.title("Target λ(x) distribution_2")
+    plt.show()
 
     # lambda_x 为目标变量，X 是你的特征
     for i in range(X.shape[1]):
@@ -414,7 +387,6 @@ def train_qrmia_regressor(
             epochs=200,
             lr=1e-3,
             batch_size=64,
-            loss_fun=loss_fun,
             device="mps" if torch.backends.mps.is_available() else "cpu",
         )
     else:
@@ -467,6 +439,7 @@ def predict_qrmia_lambda(
         return model.predict(X)
 
     elif method == "mlp":
+        use_gaussian = False
         beta = 0.1
 
         model.eval()
@@ -474,7 +447,7 @@ def predict_qrmia_lambda(
             X_tensor = torch.from_numpy(X).float().to(device)
             lambda_pred = model(X_tensor).squeeze()
 
-            if model.loss_fun_type == "gaussian":
+            if use_gaussian:
                 mu = lambda_pred[:, 0]
                 log_std = lambda_pred[:, 1]
                 std = torch.exp(log_std)
@@ -499,7 +472,7 @@ def build_X_features(target_signals: np.ndarray) -> np.ndarray:
         np.ndarray: Feature matrix for QRMIA training.
     """
     target_softmax = target_signals  # shape (N, 1)
-    use_multi_features = False     # TODO 此处开启多特征，尽量多尝试一下多特征构建
+    use_multi_features = False
     if use_multi_features:
         X = np.concatenate([
             np.log(target_softmax + 1e-8).reshape(-1, 1),  # log(softmax)
@@ -513,7 +486,7 @@ def build_X_features(target_signals: np.ndarray) -> np.ndarray:
     return X
 
 
-class QRMIARegressor(nn.Module):            # TODO 模型结构比较初级，有更好方法可以优化
+class QRMIARegressor(nn.Module):
     def __init__(self, input_dim: int, output_dim: int, hidden_dims=(128, 64, 32), scale: float = 5.0):
         super().__init__()
         layers = []
@@ -525,7 +498,6 @@ class QRMIARegressor(nn.Module):            # TODO 模型结构比较初级，�
         layers.append(nn.Linear(dims[-1], output_dim))
         # layers.append(nn.Hardtanh(min_val=0, max_val=scale))  # 限幅 [-5, 5] 但这样会导致模型塌陷
         self.model = nn.Sequential(*layers)
-        self.loss_fun_type = None
 
     def forward(self, x):
         return self.model(x)
@@ -540,14 +512,13 @@ def train_qrmia_mlp_regressor(
     lr: float = 1e-3,
     batch_size: int = 64,
     scale: float = 5.0,
-    loss_fun: str = "pinball",
     device: str = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu"),
 ) -> nn.Module:
     """
     Train QRMIA MLP-based quantile regressor using pinball loss.
     """
     # ---- Setting ----
-
+    use_gaussian = False
 
     # ---- DataLoader ----
     X_tensor = torch.from_numpy(X).float()
@@ -557,12 +528,11 @@ def train_qrmia_mlp_regressor(
 
     # ---- Model ----
     input_dim = X.shape[1]
-    output_dim = 2 if loss_fun == "gaussian"  else 1
+    output_dim = 2 if use_gaussian  else 1
     model = QRMIARegressor(input_dim=input_dim, output_dim=output_dim, hidden_dims=hidden_dims, scale=scale).to(device)
-    model.loss_fun_type = loss_fun
 
     # ---- Pinball loss ----
-    def pinball_loss_fn(preds, targets, q=1-beta):
+    def pinball_loss_fn(preds, targets, q=1 - beta):
         diff = targets - preds.squeeze()
         return torch.mean(torch.maximum(q * diff, (q - 1) * diff))
 
@@ -573,12 +543,11 @@ def train_qrmia_mlp_regressor(
         return torch.mean(log_std + 0.5 * torch.exp(-2 * log_std) * (targets - mu) ** 2)
 
     # ---- Define loss function ----
-    if model.loss_fun_type == "gaussian":
+    if use_gaussian:
         loss_fn = gaussian_loss_fn
-    elif model.loss_fun_type == "pinball":
-        loss_fn = pinball_loss_fn
     else:
-        raise ValueError(f"Unsupported loss function: {loss_fun}")
+        loss_fn = pinball_loss_fn
+
 
     # ---- Optimizer ----
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
@@ -607,12 +576,12 @@ def train_qrmia_mlp_regressor(
         loss = loss_fn(preds, y_tensor.to(device))
         print(f"Final evaluation loss: {loss.item():.4f}")
 
-    plot_y_vs_pred(y_tensor, preds, loss_fun)
+    plot_y_vs_pred(y_tensor, preds)
 
     return model
 
 
-def plot_y_vs_pred(y: torch.Tensor, preds: torch.Tensor, loss_fun: str = "pinball"):
+def plot_y_vs_pred(y: torch.Tensor, preds: torch.Tensor):
     """
     Plot the true vs predicted values for QRMIA.
 
@@ -621,9 +590,11 @@ def plot_y_vs_pred(y: torch.Tensor, preds: torch.Tensor, loss_fun: str = "pinbal
         preds (np.ndarray): Predicted values.
     """
     # 从预测输出中提取 μ（即预测 λ_pred）
-    if loss_fun == "gaussian":
+    use_gaussian = False
+
+    if use_gaussian:
         preds = preds[:, 0].detach().cpu().numpy()
-    elif loss_fun == "pinball":
+    else:
         preds = preds.detach().cpu().numpy()
 
     y_true = y.cpu().numpy()

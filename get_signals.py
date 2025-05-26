@@ -67,6 +67,7 @@ def get_softmax(
                 )
                 softmax_list.append(sequence_probs.to("cpu").view(-1, 1))
             else:
+                # softmax手动计算
                 logit_signals = torch.div(pred, temp)
                 max_logit_signals, _ = torch.max(logit_signals, dim=1)
                 # This is to avoid overflow when exp(logit_signals)
@@ -76,10 +77,78 @@ def get_softmax(
                 exp_logit_signals = torch.exp(logit_signals)
                 exp_logit_sum = exp_logit_signals.sum(dim=1).reshape(-1, 1)
                 true_exp_logit = exp_logit_signals.gather(1, y.reshape(-1, 1))
-                softmax_list.append(torch.div(true_exp_logit, exp_logit_sum).to("cpu"))
+                manual_softmax = torch.div(true_exp_logit, exp_logit_sum)
+
+                # softmax简洁实现
+                prob_all = F.softmax(torch.div(pred, temp), dim=-1)
+                true_prob = prob_all.gather(1, y.reshape(-1, 1))
+
+                # 数值差异分析
+                diff = torch.abs(manual_softmax - true_prob)
+                max_diff = diff.max().item()
+                mean_diff = diff.mean().item()
+
+                # print(f"[Softmax Compare] Max diff: {max_diff:.8f}, Mean diff: {mean_diff:.8f}")
+                # 结论是数值差异很小
+
+                softmax_list.append(manual_softmax.to("cpu"))
         all_softmax_list = np.concatenate(softmax_list)
     model.to("cpu")
     return all_softmax_list
+
+
+def get_logit_scaled(
+    model: Union[PreTrainedModel, torch.nn.Module],
+    samples: torch.Tensor,
+    labels: torch.Tensor,
+    batch_size: int,
+    device: str,
+    temp: float = 1.0,
+    pad_token_id: Optional[int] = None,
+    eps: float = 1e-8,
+) -> np.ndarray:
+    """
+    Get the logit-scaled value: log(p / (1 - p)) where p is the predicted prob for the true class.
+
+    Args:
+        model (PreTrainedModel or torch.nn.Module): Model instance.
+        samples (torch.Tensor): Model input.
+        labels (torch.Tensor): True labels (used to extract p = softmax(x)_y).
+        batch_size (int): Batch size for signal extraction.
+        device (str): Device used for inference.
+        temp (float): Temperature scaling for logits.
+        pad_token_id (Optional[int]): If using padding, mask those tokens.
+        eps (float): Small constant to avoid log(0).
+
+    Returns:
+        logit_scaled_values (np.ndarray): shape (N, 1)
+    """
+    model.to(device)
+    model.eval()
+    with torch.no_grad():
+        scaled_list = []
+        batched_samples = torch.split(samples, batch_size)
+        batched_labels = torch.split(labels, batch_size)
+
+        for x, y in tqdm(zip(batched_samples, batched_labels), total=len(batched_samples), desc="Computing logit-scaled"):
+            x = x.to(device)
+            y = y.to(device)
+
+            pred = model(x)
+            if isinstance(model, PreTrainedModel):
+                logits = pred.logits
+            else:
+                logits = pred
+
+            logits = torch.div(logits, temp)
+            softmax_probs = F.softmax(logits, dim=-1)
+            true_probs = softmax_probs.gather(1, y.view(-1, 1))
+
+            logit_scaled = torch.log(true_probs + eps) - torch.log(1 - true_probs + eps)
+            scaled_list.append(logit_scaled.cpu())
+
+    model.to("cpu")
+    return torch.cat(scaled_list, dim=0).numpy()
 
 
 def get_loss(
@@ -153,28 +222,28 @@ def get_model_signals(models_list, dataset, configs, logger, is_population=False
         else f"{configs['audit']['algorithm'].lower()}_signals"
     )
     signal_file_name += "_pop.npy" if is_population else ".npy"
-    if os.path.exists(
-        f"{configs['run']['log_dir']}/signals/{signal_file_name}",
-    ):
-        signals = np.load(
-            f"{configs['run']['log_dir']}/signals/{signal_file_name}",
-        )
-        if configs.get("ramia", None) is None:
-            expected_size = len(dataset)
-            signal_source = "training data size"
-        else:
-            expected_size = len(dataset) * configs["ramia"]["sample_size"]
-            signal_source = f"training data size multiplied by ramia sample size ({configs['ramia']['sample_size']})"
-
-        if signals.shape[0] == expected_size:
-            logger.info("Signals loaded from disk successfully.")
-            return signals
-        else:
-            logger.warning(
-                f"Signals shape ({signals.shape[0]}) does not match the expected size ({expected_size}). "
-                f"This mismatch is likely due to a change in the {signal_source}."
-            )
-            logger.info("Ignoring the signals on disk and recomputing.")
+    # if os.path.exists(
+    #     f"{configs['run']['log_dir']}/signals/{signal_file_name}",
+    # ):
+    #     signals = np.load(
+    #         f"{configs['run']['log_dir']}/signals/{signal_file_name}",
+    #     )
+    #     if configs.get("ramia", None) is None:
+    #         expected_size = len(dataset)
+    #         signal_source = "training data size"
+    #     else:
+    #         expected_size = len(dataset) * configs["ramia"]["sample_size"]
+    #         signal_source = f"training data size multiplied by ramia sample size ({configs['ramia']['sample_size']})"
+    #
+    #     if signals.shape[0] == expected_size:
+    #         logger.info("Signals loaded from disk successfully.")
+    #         return signals
+    #     else:
+    #         logger.warning(
+    #             f"Signals shape ({signals.shape[0]}) does not match the expected size ({expected_size}). "
+    #             f"This mismatch is likely due to a change in the {signal_source}."
+    #         )
+    #         logger.info("Ignoring the signals on disk and recomputing.")
 
     batch_size = configs["audit"]["batch_size"]  # Batch size used for inferring signals
     model_name = configs["train"]["model_name"]  # Algorithm used for training models
@@ -200,14 +269,24 @@ def get_model_signals(models_list, dataset, configs, logger, is_population=False
         if len(data.shape) != 2:
             data = data.view(-1, *data.shape[2:])
             targets = targets.view(data.shape[0], -1)
+
+    # Define the signal extraction function based on the algorithm
+    if configs["audit"]["algorithm"] == "QQRMIA" or configs["audit"]["algorithm"] == "LIRA":
+        get_signals_func = get_logit_scaled
+    elif configs["audit"]["algorithm"] == "QRMIA" or configs["audit"]["algorithm"] == "RMIA":
+        get_signals_func = get_softmax
+    else :
+        get_signals_func = get_loss
+
+
     for model in models_list:
         signals.append(
-            get_softmax(
+            get_signals_func(
                 model, data, targets, batch_size, device, pad_token_id=pad_token_id
             )
         )
 
-    signals = np.concatenate(signals, axis=1)
+    signals = np.concatenate(signals, axis=1)         # shape (N, num_models)
     os.makedirs(f"{configs['run']['log_dir']}/signals", exist_ok=True)
     np.save(
         f"{configs['run']['log_dir']}/signals/{signal_file_name}",
